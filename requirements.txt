@@ -1,7 +1,10 @@
-streamlit==1.31.0
+streamlit
+opencv-python-headless==4.9.0.80
 numpy<2.0.0
 pandas
+plotly
+requests
+streamlit-lottie
+ultralytics
+tensorflow-cpu
 scikit-learn
-tensorflow-cpu==2.15.0
-opencv-python-headless==4.9.0.80
-ultralytics==8.1.0
