@@ -1,7 +1,7 @@
-streamlit
-ultralytics
-tensorflow-cpu
-scikit-learn
-pandas
+streamlit==1.31.0
 numpy<2.0.0
-opencv-python-headless
+pandas
+scikit-learn
+tensorflow-cpu==2.15.0
+opencv-python-headless==4.9.0.80
+ultralytics==8.1.0
