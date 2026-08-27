@@ -1,22 +1,13 @@
-import os
-import sys
-import subprocess
-
-# --- OPENCV EMERGENCY FAILSAFE ---
-# This forces the app to wipe the broken OpenCV and install the correct one before booting.
-if not os.path.exists('/tmp/cv2_fixed.txt'):
-    subprocess.run([sys.executable, "-m", "pip", "uninstall", "-y", "opencv-python", "opencv-python-headless"])
-    subprocess.run([sys.executable, "-m", "pip", "install", "opencv-python-headless"])
-    with open('/tmp/cv2_fixed.txt', 'w') as f:
-        f.write("fixed")
-        
 import cv2
 import streamlit as st
 import numpy as np
 import pandas as pd
+import os
 import tempfile
 from ultralytics import YOLO
 from tensorflow.keras.models import load_model
+
+st.set_page_config(page_title="Elderly Fall Detection", layout="wide")
 st.set_page_config(page_title="Elderly Fall Detection", layout="wide")
 st.title("🛡️ Healthcare Monitoring: Elderly Fall Detection")
 
