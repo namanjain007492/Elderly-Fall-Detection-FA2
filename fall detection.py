@@ -1,216 +1,903 @@
-import streamlit as st
+import os
+import tempfile
+
 import cv2
 import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-import tempfile
-import os
-import requests
-from streamlit_lottie import st_lottie
-from ultralytics import YOLO
+import streamlit as st
+
 from tensorflow.keras.models import load_model
+from ultralytics import YOLO
 
-# --- PAGE CONFIGURATION & CSS ---
-st.set_page_config(page_title="Sentinel AI | Fall Detection", page_icon="🛡️", layout="wide")
 
-st.markdown("""
+# ============================================================
+# PAGE CONFIGURATION
+# ============================================================
+
+st.set_page_config(
+    page_title="Sentinel AI | Activity & Fall Detection",
+    page_icon="🛡️",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+
+# ============================================================
+# CUSTOM CSS
+# ============================================================
+
+st.markdown(
+    """
     <style>
-    .main {background-color: #0f111a;}
-    h1, h2, h3 {color: #00f2fe;}
-    .stTabs [data-baseweb="tab-list"] {gap: 24px;}
-    .stTabs [data-baseweb="tab"] {height: 50px; white-space: pre-wrap; background-color: #1e2130; border-radius: 10px 10px 0px 0px; padding: 10px 20px;}
-    .stTabs [aria-selected="true"] {background-color: #00f2fe; color: black; font-weight: bold;}
-    .metric-card {background: linear-gradient(135deg, #1e2130 0%, #2a2d3e 100%); padding: 20px; border-radius: 15px; border-left: 5px solid #00f2fe; box-shadow: 0 4px 15px rgba(0,0,0,0.3);}
-    .alert-card {background: linear-gradient(135deg, #ff4b4b 0%, #ff0000 100%); padding: 20px; border-radius: 15px; color: white; text-align: center; font-weight: bold; animation: pulse 1.5s infinite; box-shadow: 0 4px 15px rgba(255,75,75,0.4);}
-    @keyframes pulse {0% {transform: scale(1);} 50% {transform: scale(1.02);} 100% {transform: scale(1);}}
-    </style>
-""", unsafe_allow_html=True)
 
-# --- HELPER FUNCTIONS ---
-def load_lottieurl(url: str):
-    r = requests.get(url)
-    if r.status_code != 200:
-        return None
-    return r.json()
+    .stApp {
+        background-color: #0f111a;
+    }
+
+    .main-title {
+        font-size: 42px;
+        font-weight: 800;
+        margin-bottom: 0;
+    }
+
+    .subtitle {
+        color: #aab2c5;
+        font-size: 17px;
+        margin-top: 0;
+    }
+
+    .metric-card {
+        background: linear-gradient(
+            135deg,
+            #1e2130 0%,
+            #292d3f 100%
+        );
+
+        padding: 20px;
+        border-radius: 15px;
+
+        border-left: 5px solid #00f2fe;
+
+        box-shadow:
+            0 4px 15px rgba(0,0,0,0.30);
+    }
+
+    .metric-title {
+        color: #aab2c5;
+        font-size: 15px;
+        font-weight: 600;
+    }
+
+    .metric-value {
+        color: #ffffff;
+        font-size: 28px;
+        font-weight: 800;
+    }
+
+    .alert-card {
+        background: linear-gradient(
+            135deg,
+            #ff4b4b 0%,
+            #b00000 100%
+        );
+
+        padding: 22px;
+        border-radius: 15px;
+
+        color: white;
+        text-align: center;
+
+        font-size: 22px;
+        font-weight: 800;
+
+        box-shadow:
+            0 5px 20px rgba(255, 0, 0, 0.30);
+    }
+
+    .safe-card {
+        background: linear-gradient(
+            135deg,
+            #123c32 0%,
+            #17594a 100%
+        );
+
+        padding: 18px;
+        border-radius: 15px;
+
+        color: white;
+        text-align: center;
+
+        font-size: 19px;
+        font-weight: 700;
+    }
+
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
+
+# ============================================================
+# CONFIGURATION
+# ============================================================
+
+YOLO_MODEL_PATH = "models/yolov8n-pose.pt"
+CLASSIFIER_PATH = "models/fall_detection_model.h5"
+
+# IMPORTANT:
+# This order MUST match the class order used while training
+CLASS_NAMES = [
+    "Falling",
+    "Normal Activity",
+    "Sitting",
+    "Standing",
+    "Walking"
+]
+
+
+# ============================================================
+# MODEL LOADING
+# ============================================================
 
 @st.cache_resource
 def load_ai_system():
-    yolo_model = YOLO('yolov8n-pose.pt')
-    classifier = load_model('models/fall_detection_model.h5')
-    return yolo_model, classifier
 
-# --- INITIALIZE AI & STATE ---
+    if not os.path.exists(YOLO_MODEL_PATH):
+        raise FileNotFoundError(
+            f"YOLO model not found: {YOLO_MODEL_PATH}"
+        )
+
+    if not os.path.exists(CLASSIFIER_PATH):
+        raise FileNotFoundError(
+            f"Classifier not found: {CLASSIFIER_PATH}"
+        )
+
+    pose_model = YOLO(YOLO_MODEL_PATH)
+
+    classifier = load_model(
+        CLASSIFIER_PATH,
+        compile=False
+    )
+
+    return pose_model, classifier
+
+
+# ============================================================
+# INITIALIZE MODELS
+# ============================================================
+
 try:
-    yolo, clf = load_ai_system()
-    # 🚨 Ensure this matches your model's exact LabelEncoder order!
-    classes = ['Falling', 'Normal Activity', 'Sitting', 'Standing', 'Walking']
-except Exception as e:
-    st.error("⚠️ AI Models not found. Check 'yolov8n-pose.pt' and 'models/fall_detection_model.h5'")
+
+    yolo, classifier = load_ai_system()
+
+except Exception as error:
+
+    st.error("⚠️ AI system could not be loaded.")
+
+    st.code(str(error))
+
+    st.info(
+        "Check that both model files exist inside the "
+        "'models' folder."
+    )
+
     st.stop()
 
-if 'activity_log' not in st.session_state:
+
+# ============================================================
+# SESSION STATE
+# ============================================================
+
+if "activity_log" not in st.session_state:
     st.session_state.activity_log = []
-if 'fall_count' not in st.session_state:
-    st.session_state.fall_count = 0
 
-# --- SIDEBAR: MASCOT & CONTROLS ---
-with st.sidebar:
-    # 3D-style animated AI Mascot
-    lottie_robot = load_lottieurl("https://lottie.host/8040a4e7-6a4a-4c22-9e2e-2a2979219e27/0O1K8UoQnZ.json")
-    st_lottie(lottie_robot, height=200, key="robot")
-    
-    st.title("⚙️ System Controls")
-    input_mode = st.radio("Monitoring Source", ["Static Image", "Video Stream", "Live Webcam"])
-    alert_threshold = st.slider("Fall Confidence Threshold", 0.50, 0.99, 0.75, 0.05)
-    
-    st.markdown("---")
-    st.markdown("**System Status:** 🟢 Online")
-    st.markdown("**AI Engine:** YOLOv8 + Keras")
+if "fall_events" not in st.session_state:
+    st.session_state.fall_events = 0
 
-# --- CORE AI PIPELINE ---
-def analyze_frame(frame):
-    results = yolo(frame, verbose=False)
+if "frame_count" not in st.session_state:
+    st.session_state.frame_count = 0
+
+
+# ============================================================
+# HELPER — RESET SESSION
+# ============================================================
+
+def reset_session():
+
+    st.session_state.activity_log = []
+    st.session_state.fall_events = 0
+    st.session_state.frame_count = 0
+
+
+# ============================================================
+# POSE FEATURE EXTRACTION
+# ============================================================
+
+def extract_pose_features(result):
+
+    if result.keypoints is None:
+        return None
+
+    if len(result.keypoints.data) == 0:
+        return None
+
+    keypoints = (
+        result.keypoints.data[0]
+        .cpu()
+        .numpy()
+    )
+
+    # Expected:
+    # 17 keypoints × 3 values
+    # x, y, confidence
+    #
+    # = 51 values
+
+    flattened = keypoints.flatten()
+
+    if flattened.shape[0] != 51:
+        return None
+
+    return flattened
+
+
+# ============================================================
+# FRAME ANALYSIS
+# ============================================================
+
+def analyze_frame(frame, threshold):
+
+    results = yolo(
+        frame,
+        verbose=False
+    )
+
     annotated = frame.copy()
-    label = "Scanning..."
+
+    label = "No Person Detected"
     confidence = 0.0
-    
-    for r in results:
-        if r.keypoints is not None and len(r.keypoints.data) > 0:
-            annotated = r.plot()
-            kp = r.keypoints.data[0].cpu().numpy().flatten()
-            
-            if len(kp) == 51:
-                prediction = clf.predict(kp.reshape(1, -1), verbose=0)
-                class_idx = np.argmax(prediction)
-                label = classes[class_idx]
-                confidence = float(np.max(prediction))
-                
-                # Visual overlay for emergencies
-                if label == 'Falling' and confidence >= alert_threshold:
-                    cv2.rectangle(annotated, (0, 0), (annotated.shape[1], 90), (0, 0, 255), -1)
-                    cv2.putText(annotated, f"🚨 EMERGENCY: FALL DETECTED ({confidence*100:.1f}%)", 
-                                (20, 60), cv2.FONT_HERSHEY_DUPLEX, 1.2, (255, 255, 255), 3)
-                else:
-                    cv2.rectangle(annotated, (0, 0), (annotated.shape[1], 60), (0, 0, 0), -1)
-                    cv2.putText(annotated, f"Status: {label} | Conf: {confidence*100:.1f}%", 
-                                (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+
+    for result in results:
+
+        features = extract_pose_features(result)
+
+        if features is None:
+            continue
+
+        # Draw YOLO pose visualization
+        annotated = result.plot()
+
+        prediction = classifier.predict(
+            features.reshape(1, -1),
+            verbose=0
+        )
+
+        prediction = np.asarray(prediction)
+
+        class_index = int(
+            np.argmax(prediction)
+        )
+
+        confidence = float(
+            prediction[0][class_index]
+        )
+
+        if class_index < len(CLASS_NAMES):
+            label = CLASS_NAMES[class_index]
+
+        else:
+            label = "Unknown"
+
+        break
+
+    # --------------------------------------------------------
+    # STATUS OVERLAY
+    # --------------------------------------------------------
+
+    if (
+        label == "Falling"
+        and confidence >= threshold
+    ):
+
+        cv2.rectangle(
+            annotated,
+            (0, 0),
+            (annotated.shape[1], 85),
+            (0, 0, 255),
+            -1
+        )
+
+        cv2.putText(
+            annotated,
+            f"FALL DETECTED | {confidence * 100:.1f}%",
+            (20, 55),
+            cv2.FONT_HERSHEY_DUPLEX,
+            1.1,
+            (255, 255, 255),
+            3
+        )
+
+    else:
+
+        cv2.rectangle(
+            annotated,
+            (0, 0),
+            (annotated.shape[1], 65),
+            (20, 20, 20),
+            -1
+        )
+
+        cv2.putText(
+            annotated,
+            f"{label} | {confidence * 100:.1f}%",
+            (20, 43),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            1.0,
+            (0, 255, 0),
+            2
+        )
+
     return annotated, label, confidence
 
-# --- MAIN DASHBOARD LAYOUT ---
-st.title("🛡️ Sentinel: Elderly Fall Detection Network")
 
-# Real-time Top Metrics
-col1, col2, col3 = st.columns(3)
+# ============================================================
+# SIDEBAR
+# ============================================================
+
+with st.sidebar:
+
+    st.markdown("## 🛡️ Sentinel AI")
+
+    st.caption(
+        "AI-powered activity and fall detection"
+    )
+
+    st.markdown("---")
+
+    input_mode = st.radio(
+        "Monitoring Source",
+        [
+            "Static Image",
+            "Video Stream"
+        ]
+    )
+
+    alert_threshold = st.slider(
+        "Fall Confidence Threshold",
+        min_value=0.50,
+        max_value=0.99,
+        value=0.75,
+        step=0.05
+    )
+
+    st.markdown("---")
+
+    st.markdown("### System Status")
+
+    st.success("🟢 AI Engine Online")
+
+    st.markdown(
+        "**Pose Model:** YOLOv8 Pose"
+    )
+
+    st.markdown(
+        "**Classifier:** Keras CNN"
+    )
+
+    st.markdown("---")
+
+    if st.button(
+        "🗑️ Clear Session Data",
+        use_container_width=True
+    ):
+
+        reset_session()
+        st.rerun()
+
+
+# ============================================================
+# HEADER
+# ============================================================
+
+st.markdown(
+    '<p class="main-title">🛡️ Sentinel AI</p>',
+    unsafe_allow_html=True
+)
+
+st.markdown(
+    '<p class="subtitle">'
+    'Elderly Activity & Fall Detection Network'
+    '</p>',
+    unsafe_allow_html=True
+)
+
+st.markdown("---")
+
+
+# ============================================================
+# TOP METRICS
+# ============================================================
+
+col1, col2, col3, col4 = st.columns(4)
+
 with col1:
-    st.markdown(f"<div class='metric-card'><h3>Active Scans</h3><h2>{len(st.session_state.activity_log)}</h2></div>", unsafe_allow_html=True)
+
+    st.markdown(
+        f"""
+        <div class="metric-card">
+            <div class="metric-title">
+                Processed Frames
+            </div>
+            <div class="metric-value">
+                {st.session_state.frame_count}
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
 with col2:
-    st.markdown(f"<div class='metric-card'><h3>Current Input</h3><h2>{input_mode}</h2></div>", unsafe_allow_html=True)
+
+    st.markdown(
+        f"""
+        <div class="metric-card">
+            <div class="metric-title">
+                Logged Activities
+            </div>
+            <div class="metric-value">
+                {len(st.session_state.activity_log)}
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
 with col3:
-    st.markdown(f"<div class='metric-card' style='border-left: 5px solid #ff4b4b;'><h3>Critical Alerts</h3><h2>{st.session_state.fall_count}</h2></div>", unsafe_allow_html=True)
+
+    st.markdown(
+        f"""
+        <div class="metric-card">
+            <div class="metric-title">
+                Confirmed Fall Events
+            </div>
+            <div class="metric-value">
+                {st.session_state.fall_events}
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+with col4:
+
+    st.markdown(
+        f"""
+        <div class="metric-card">
+            <div class="metric-title">
+                Alert Threshold
+            </div>
+            <div class="metric-value">
+                {alert_threshold * 100:.0f}%
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
 
 st.markdown("<br>", unsafe_allow_html=True)
 
-# TABS FOR CLEAN INTERFACE
-tab1, tab2, tab3 = st.tabs(["📷 Live Monitoring Hub", "📈 Advanced Analytics", "📋 Data Export & Logs"])
+
+# ============================================================
+# TABS
+# ============================================================
+
+tab1, tab2, tab3 = st.tabs(
+    [
+        "📷 Monitoring",
+        "📈 Analytics",
+        "📋 Logs & Export"
+    ]
+)
+
+
+# ============================================================
+# TAB 1 — MONITORING
+# ============================================================
 
 with tab1:
-    st.subheader(f"Current Feed: {input_mode}")
-    
+
+    st.subheader(
+        f"Current Feed: {input_mode}"
+    )
+
+    # --------------------------------------------------------
+    # STATIC IMAGE
+    # --------------------------------------------------------
+
     if input_mode == "Static Image":
-        uploaded_file = st.file_uploader("Upload Room Footage", type=['jpg', 'jpeg', 'png'])
+
+        uploaded_file = st.file_uploader(
+            "Upload an image",
+            type=[
+                "jpg",
+                "jpeg",
+                "png"
+            ]
+        )
+
         if uploaded_file:
-            file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
-            img = cv2.imdecode(file_bytes, 1)
-            
-            processed_img, final_label, final_conf = analyze_frame(img)
-            
-            if final_label == 'Falling' and final_conf >= alert_threshold:
-                st.markdown("<div class='alert-card'>🚨 IMMEDIATE MEDICAL ATTENTION REQUIRED: FALL DETECTED 🚨</div><br>", unsafe_allow_html=True)
-                st.session_state.fall_count += 1
-            
-            st.session_state.activity_log.append({"Activity": final_label, "Confidence": final_conf})
-            
+
+            file_bytes = np.asarray(
+                bytearray(
+                    uploaded_file.read()
+                ),
+                dtype=np.uint8
+            )
+
+            image = cv2.imdecode(
+                file_bytes,
+                cv2.IMREAD_COLOR
+            )
+
+            processed, label, confidence = analyze_frame(
+                image,
+                alert_threshold
+            )
+
+            st.session_state.frame_count += 1
+
+            st.session_state.activity_log.append(
+                {
+                    "Activity": label,
+                    "Confidence": confidence,
+                    "Source": "Image"
+                }
+            )
+
+            if (
+                label == "Falling"
+                and confidence >= alert_threshold
+            ):
+
+                st.session_state.fall_events += 1
+
+                st.markdown(
+                    """
+                    <div class="alert-card">
+                        🚨 FALL DETECTED<br>
+                        Immediate attention recommended
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
+
+            elif label != "No Person Detected":
+
+                st.markdown(
+                    f"""
+                    <div class="safe-card">
+                        ✓ {label}
+                        &nbsp;&nbsp;|&nbsp;&nbsp;
+                        Confidence: {confidence * 100:.1f}%
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
+
+            st.markdown("<br>", unsafe_allow_html=True)
+
             c1, c2 = st.columns(2)
-            c1.image(cv2.cvtColor(img, cv2.COLOR_BGR2RGB), caption="Raw Camera Feed", use_container_width=True)
-            c2.image(cv2.cvtColor(processed_img, cv2.COLOR_BGR2RGB), caption="AI Spatial Analysis", use_container_width=True)
+
+            with c1:
+
+                st.image(
+                    cv2.cvtColor(
+                        image,
+                        cv2.COLOR_BGR2RGB
+                    ),
+                    caption="Original Input",
+                    use_container_width=True
+                )
+
+            with c2:
+
+                st.image(
+                    cv2.cvtColor(
+                        processed,
+                        cv2.COLOR_BGR2RGB
+                    ),
+                    caption="AI Pose Analysis",
+                    use_container_width=True
+                )
+
+
+    # --------------------------------------------------------
+    # VIDEO
+    # --------------------------------------------------------
 
     elif input_mode == "Video Stream":
-        uploaded_video = st.file_uploader("Upload Surveillance Clip", type=['mp4', 'avi'])
-        if uploaded_video:
-            tfile = tempfile.NamedTemporaryFile(delete=False)
-            tfile.write(uploaded_video.read())
-            cap = cv2.VideoCapture(tfile.name)
-            video_placeholder = st.empty()
-            
-            while cap.isOpened():
-                ret, frame = cap.read()
-                if not ret: break
-                
-                p_frame, final_label, final_conf = analyze_frame(frame)
-                video_placeholder.image(cv2.cvtColor(p_frame, cv2.COLOR_BGR2RGB), channels="RGB", use_container_width=True)
-                
-                if final_label != "Scanning...":
-                    st.session_state.activity_log.append({"Activity": final_label, "Confidence": final_conf})
-                    if final_label == 'Falling' and final_conf >= alert_threshold:
-                        st.session_state.fall_count += 1
 
-    elif input_mode == "Live Webcam":
-        st.warning("Webcam processing requires high local CPU usage.")
-        run_cam = st.checkbox("Turn on Camera")
-        cam_placeholder = st.empty()
-        
-        if run_cam:
-            cap = cv2.VideoCapture(0)
-            while run_cam:
+        uploaded_video = st.file_uploader(
+            "Upload a surveillance video",
+            type=[
+                "mp4",
+                "avi",
+                "mov"
+            ]
+        )
+
+        if uploaded_video:
+
+            temporary_file = tempfile.NamedTemporaryFile(
+                delete=False,
+                suffix=".mp4"
+            )
+
+            temporary_file.write(
+                uploaded_video.read()
+            )
+
+            temporary_file.close()
+
+            cap = cv2.VideoCapture(
+                temporary_file.name
+            )
+
+            placeholder = st.empty()
+
+            progress = st.progress(0)
+
+            total_frames = int(
+                cap.get(
+                    cv2.CAP_PROP_FRAME_COUNT
+                )
+            )
+
+            video_fall_detected = False
+
+            while cap.isOpened():
+
                 ret, frame = cap.read()
+
                 if not ret:
-                    st.error("Camera access failed.")
                     break
-                p_frame, final_label, final_conf = analyze_frame(frame)
-                cam_placeholder.image(cv2.cvtColor(p_frame, cv2.COLOR_BGR2RGB), channels="RGB", use_container_width=True)
+
+                processed, label, confidence = analyze_frame(
+                    frame,
+                    alert_threshold
+                )
+
+                st.session_state.frame_count += 1
+
+                if label != "No Person Detected":
+
+                    st.session_state.activity_log.append(
+                        {
+                            "Activity": label,
+                            "Confidence": confidence,
+                            "Source": "Video"
+                        }
+                    )
+
+                if (
+                    label == "Falling"
+                    and confidence >= alert_threshold
+                ):
+
+                    video_fall_detected = True
+
+                placeholder.image(
+                    cv2.cvtColor(
+                        processed,
+                        cv2.COLOR_BGR2RGB
+                    ),
+                    channels="RGB",
+                    use_container_width=True
+                )
+
+                if total_frames > 0:
+
+                    current_frame = int(
+                        cap.get(
+                            cv2.CAP_PROP_POS_FRAMES
+                        )
+                    )
+
+                    progress.progress(
+                        min(
+                            current_frame / total_frames,
+                            1.0
+                        )
+                    )
+
             cap.release()
 
+            progress.empty()
+
+            if video_fall_detected:
+
+                st.session_state.fall_events += 1
+
+                st.markdown(
+                    """
+                    <div class="alert-card">
+                        🚨 FALL EVENT DETECTED
+                        <br>
+                        Potential fall identified in uploaded video
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
+
+            else:
+
+                st.success(
+                    "✅ Video analysis completed. "
+                    "No high-confidence fall event detected."
+                )
+
+            os.unlink(
+                temporary_file.name
+            )
+
+
+# ============================================================
+# TAB 2 — ANALYTICS
+# ============================================================
+
 with tab2:
-    st.subheader("Behavioral Analytics & Trends")
-    if len(st.session_state.activity_log) > 0:
-        df = pd.DataFrame(st.session_state.activity_log)
-        
+
+    st.subheader(
+        "Behavioral Analytics & Trends"
+    )
+
+    if st.session_state.activity_log:
+
+        df = pd.DataFrame(
+            st.session_state.activity_log
+        )
+
         c1, c2 = st.columns(2)
+
         with c1:
-            # Enhanced 3D-style Donut Chart
-            fig_pie = px.pie(df, names='Activity', hole=0.4, title="Activity Distribution",
-                             color_discrete_sequence=px.colors.qualitative.Pastel)
-            fig_pie.update_traces(textposition='inside', textinfo='percent+label')
-            st.plotly_chart(fig_pie, use_container_width=True)
-        
+
+            fig_pie = px.pie(
+                df,
+                names="Activity",
+                hole=0.45,
+                title="Activity Distribution"
+            )
+
+            fig_pie.update_traces(
+                textposition="inside",
+                textinfo="percent+label"
+            )
+
+            st.plotly_chart(
+                fig_pie,
+                use_container_width=True
+            )
+
         with c2:
-            # Gauge chart for system stress/alerts
-            alert_ratio = (st.session_state.fall_count / len(df)) * 100 if len(df) > 0 else 0
-            fig_gauge = go.Figure(go.Indicator(
-                mode = "gauge+number", value = alert_ratio,
-                title = {'text': "Critical Incident Ratio (%)"},
-                gauge = {'axis': {'range': [None, 100]},
-                         'bar': {'color': "red"},
-                         'steps': [{'range': [0, 10], 'color': "lightgreen"},
-                                   {'range': [10, 30], 'color': "orange"}]}
-            ))
-            st.plotly_chart(fig_gauge, use_container_width=True)
+
+            counts = (
+                df["Activity"]
+                .value_counts()
+                .reset_index()
+            )
+
+            counts.columns = [
+                "Activity",
+                "Count"
+            ]
+
+            fig_bar = px.bar(
+                counts,
+                x="Activity",
+                y="Count",
+                title="Detected Activity Counts",
+                text="Count"
+            )
+
+            fig_bar.update_traces(
+                textposition="outside"
+            )
+
+            st.plotly_chart(
+                fig_bar,
+                use_container_width=True
+            )
+
+        st.markdown("### Confidence Statistics")
+
+        avg_confidence = df[
+            "Confidence"
+        ].mean()
+
+        max_confidence = df[
+            "Confidence"
+        ].max()
+
+        c1, c2 = st.columns(2)
+
+        c1.metric(
+            "Average Confidence",
+            f"{avg_confidence * 100:.2f}%"
+        )
+
+        c2.metric(
+            "Maximum Confidence",
+            f"{max_confidence * 100:.2f}%"
+        )
+
     else:
-        st.info("Awaiting data stream to generate analytics...")
+
+        st.info(
+            "Upload an image or video to generate analytics."
+        )
+
+
+# ============================================================
+# TAB 3 — LOGS & EXPORT
+# ============================================================
 
 with tab3:
-    st.subheader("System Logs & Incident Reports")
-    if len(st.session_state.activity_log) > 0:
-        log_df = pd.DataFrame(st.session_state.activity_log)
-        st.dataframe(log_df.tail(20), use_container_width=True)
-        
-        csv = log_df.to_csv(index=False).encode('utf-8')
-        st.download_button(
-            label="📥 Download Full Incident Report (CSV)",
-            data=csv,
-            file_name='healthcare_monitoring_log.csv',
-            mime='text/csv',
+
+    st.subheader(
+        "System Logs & Incident Reports"
+    )
+
+    if st.session_state.activity_log:
+
+        log_df = pd.DataFrame(
+            st.session_state.activity_log
         )
+
+        display_df = log_df.copy()
+
+        display_df["Confidence"] = (
+            display_df["Confidence"] * 100
+        ).round(2)
+
+        display_df.rename(
+            columns={
+                "Confidence": "Confidence (%)"
+            },
+            inplace=True
+        )
+
+        st.dataframe(
+            display_df.tail(30),
+            use_container_width=True
+        )
+
+        csv_data = log_df.to_csv(
+            index=False
+        ).encode("utf-8")
+
+        st.download_button(
+            label="📥 Download Activity Report",
+            data=csv_data,
+            file_name="sentinel_activity_log.csv",
+            mime="text/csv"
+        )
+
     else:
-        st.info("No recorded events yet.")
+
+        st.info(
+            "No activity has been recorded yet."
+        )
+
+
+# ============================================================
+# FOOTER
+# ============================================================
+
+st.markdown("---")
+
+st.caption(
+    "Sentinel AI | Educational AI Healthcare Monitoring Prototype"
+)
