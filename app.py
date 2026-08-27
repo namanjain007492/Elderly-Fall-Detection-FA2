@@ -1,118 +1,138 @@
-import os
-import sys
-import subprocess
-
-# --- 1. EMERGENCY OPENCV FIX (MUST BE LINES 1-10) ---
-# Wipes the broken desktop OpenCV and installs the headless server version before booting.
-if not os.path.exists('/tmp/cv2_fixed.txt'):
-    subprocess.run([sys.executable, "-m", "pip", "uninstall", "-y", "opencv-python"])
-    subprocess.run([sys.executable, "-m", "pip", "install", "opencv-python-headless==4.9.0.80"])
-    with open('/tmp/cv2_fixed.txt', 'w') as f:
-        f.write("fixed")
-
-# --- 2. STANDARD IMPORTS ---
-import cv2
 import streamlit as st
+import cv2
 import numpy as np
 import pandas as pd
 import tempfile
+import os
 from ultralytics import YOLO
 from tensorflow.keras.models import load_model
 
-# --- 3. APP CONFIG & MODEL LOADING ---
-st.set_page_config(page_title="FA-2 Elderly Fall Detection", layout="wide")
-st.title("🛡️ Healthcare Monitoring: Elderly Fall Detection")
+# --- UI CONFIGURATION ---
+st.set_page_config(page_title="Elderly Safety AI", page_icon="🛡️", layout="wide")
 
+st.markdown("""
+    <style>
+    .main {background-color: #0e1117;}
+    .st-emotion-cache-1wivap2 {border-radius: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.2);}
+    .alert-danger {background-color: #ff4b4b; color: white; padding: 20px; border-radius: 10px; text-align: center; font-weight: bold; animation: pulse 1.5s infinite;}
+    @keyframes pulse {0% {transform: scale(1);} 50% {transform: scale(1.02);} 100% {transform: scale(1);}}
+    .metric-card {background: #1e2130; padding: 20px; border-radius: 10px; border-left: 5px solid #00f2fe;}
+    </style>
+""", unsafe_allow_html=True)
+
+# --- MODEL LOADING (CACHED FOR SPEED) ---
 @st.cache_resource
-def load_ai_models():
+def load_ai_system():
     yolo = YOLO('yolov8n-pose.pt')
-    # Use relative path for Streamlit Cloud
-    model = load_model('models/fall_detection_model.h5') 
-    return yolo, model
+    model_path = 'models/fall_detection_model.h5'
+    if not os.path.exists(model_path):
+        st.error(f"Missing model file at {model_path}. Please upload it to GitHub.")
+        st.stop()
+    classifier = load_model(model_path)
+    return yolo, classifier
 
-try:
-    yolo, clf = load_ai_models()
-except Exception as e:
-    st.error("⚠️ Model not found! Please ensure 'models/fall_detection_model.h5' is uploaded to GitHub.")
-    st.stop()
-
+yolo, clf = load_ai_system()
 classes = ['Fall', 'Normal_Activity']
 
-# --- 4. UI AND CORE LOGIC ---
-st.sidebar.header("Monitoring Settings")
-input_type = st.sidebar.radio("Select Input Source", ["Upload Image", "Upload Video"])
-confidence_threshold = st.sidebar.slider("Alert Confidence Threshold", 0.5, 0.99, 0.75)
+# --- SIDEBAR & STATE ---
+st.sidebar.image("https://cdn-icons-png.flaticon.com/512/3004/3004451.png", width=100)
+st.sidebar.title("Caregiver Controls")
+input_mode = st.sidebar.radio("Observation Mode", ["Live Camera", "Upload Video", "Static Frame"])
+alert_threshold = st.sidebar.slider("Sensitivity Threshold", 0.50, 0.99, 0.75, 0.05)
 
-if "fall_count" not in st.session_state:
-    st.session_state.fall_count = 0
-if "activity_log" not in st.session_state:
-    st.session_state.activity_log = []
+if "total_events" not in st.session_state:
+    st.session_state.total_events = 0
+if "fall_events" not in st.session_state:
+    st.session_state.fall_events = 0
 
-def process_frame(img):
-    results = yolo(img, verbose=False)
-    annotated_img = img.copy()
-    detected_label = "No Person"
-    conf = 0.0
+# --- CORE PROCESSING PIPELINE ---
+def analyze_frame(frame):
+    results = yolo(frame, verbose=False)
+    output_frame = frame.copy()
+    current_label = "Scanning..."
+    highest_conf = 0.0
     
     for r in results:
         if r.keypoints is not None and len(r.keypoints.data) > 0:
-            annotated_img = r.plot()
+            output_frame = r.plot()
             kp = r.keypoints.data[0].cpu().numpy().flatten()
             
-            # Ensure the array size matches the 51 features you trained on
             if len(kp) == 51:
                 pred = clf.predict(kp.reshape(1, -1), verbose=0)
-                detected_label = classes[np.argmax(pred)]
-                conf = np.max(pred)
+                current_label = classes[np.argmax(pred)]
+                highest_conf = np.max(pred)
                 
-                if detected_label == 'Fall' and conf >= confidence_threshold:
-                    cv2.putText(annotated_img, "FALL DETECTED!", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 0, 255), 3)
-    
-    return annotated_img, detected_label, conf
+                if current_label == 'Fall' and highest_conf >= alert_threshold:
+                    cv2.rectangle(output_frame, (0, 0), (output_frame.shape[1], 80), (0, 0, 255), -1)
+                    cv2.putText(output_frame, f"CRITICAL: FALL DETECTED ({highest_conf*100:.1f}%)", 
+                                (20, 50), cv2.FONT_HERSHEY_DUPLEX, 1, (255, 255, 255), 2)
+                    
+    return output_frame, current_label, highest_conf
 
-if input_type == "Upload Image":
-    uploaded = st.file_uploader("Upload Frame", type=['jpg', 'png', 'jpeg'])
-    if uploaded:
-        file_bytes = np.asarray(bytearray(uploaded.read()), dtype=np.uint8)
+# --- MAIN DASHBOARD ---
+st.title("🛡️ Sentinel: AI Healthcare Monitor")
+st.markdown("Real-time posture estimation and activity classification dashboard.")
+
+col1, col2, col3 = st.columns(3)
+with col1:
+    st.markdown(f"<div class='metric-card'><h3>Active Streams</h3><h2>1</h2></div>", unsafe_allow_html=True)
+with col2:
+    st.markdown(f"<div class='metric-card'><h3>Total Scans</h3><h2>{st.session_state.total_events}</h2></div>", unsafe_allow_html=True)
+with col3:
+    st.markdown(f"<div class='metric-card' style='border-left: 5px solid #ff4b4b;'><h3>Critical Alerts</h3><h2>{st.session_state.fall_events}</h2></div>", unsafe_allow_html=True)
+
+st.divider()
+
+if input_mode == "Static Frame":
+    uploaded_file = st.file_uploader("Upload Room Footage", type=['jpg', 'png', 'jpeg'])
+    if uploaded_file:
+        file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
         img = cv2.imdecode(file_bytes, 1)
-        annotated_img, label, conf = process_frame(img)
         
-        col1, col2 = st.columns(2)
-        col1.image(cv2.cvtColor(img, cv2.COLOR_BGR2RGB), caption="Original View")
-        col2.image(cv2.cvtColor(annotated_img, cv2.COLOR_BGR2RGB), caption="AI Pose Estimation")
+        st.session_state.total_events += 1
+        processed_img, label, conf = analyze_frame(img)
         
-        if label == 'Fall' and conf >= confidence_threshold:
-            st.error(f"🚨 EMERGENCY ALERT: Fall Detected ({conf*100:.1f}% Confidence)")
-            st.session_state.fall_count += 1
-            st.session_state.activity_log.append({"Activity": "Fall", "Confidence": conf})
-        elif label != "No Person":
-            st.success(f"Activity Status: {label} ({conf*100:.1f}%)")
-            st.session_state.activity_log.append({"Activity": label, "Confidence": conf})
+        if label == 'Fall' and conf >= alert_threshold:
+            st.session_state.fall_events += 1
+            st.markdown("<div class='alert-danger'>🚨 EMERGENCY RESPONSE REQUIRED: FALL DETECTED 🚨</div><br>", unsafe_allow_html=True)
+        else:
+            st.success(f"Status: Normal ({label} - {conf*100:.1f}%)")
+            
+        c1, c2 = st.columns(2)
+        c1.image(cv2.cvtColor(img, cv2.COLOR_BGR2RGB), caption="Raw Camera Feed", use_container_width=True)
+        c2.image(cv2.cvtColor(processed_img, cv2.COLOR_BGR2RGB), caption="AI Spatial Analysis", use_container_width=True)
 
-elif input_type == "Upload Video":
-    uploaded = st.file_uploader("Upload Surveillance Video", type=['mp4', 'avi'])
-    if uploaded:
+elif input_mode == "Upload Video":
+    uploaded_video = st.file_uploader("Upload Surveillance Clip", type=['mp4', 'avi'])
+    if uploaded_video:
         tfile = tempfile.NamedTemporaryFile(delete=False)
-        tfile.write(uploaded.read())
+        tfile.write(uploaded_video.read())
         cap = cv2.VideoCapture(tfile.name)
-        stframe = st.empty()
+        video_placeholder = st.empty()
         
         while cap.isOpened():
             ret, frame = cap.read()
             if not ret: break
             
-            annotated_frame, label, conf = process_frame(frame)
-            stframe.image(cv2.cvtColor(annotated_frame, cv2.COLOR_BGR2RGB), channels="RGB")
+            p_frame, label, conf = analyze_frame(frame)
+            video_placeholder.image(cv2.cvtColor(p_frame, cv2.COLOR_BGR2RGB), channels="RGB", use_container_width=True)
             
-            if label == 'Fall' and conf >= confidence_threshold:
-                st.error(f"🚨 FALL DETECTED IN VIDEO STREAM ({conf*100:.1f}%)")
-                st.session_state.fall_count += 1
-
-st.divider()
-st.subheader("📊 Healthcare Monitoring Analytics")
-m1, m2 = st.columns(2)
-m1.metric("Total Fall Alerts", st.session_state.fall_count)
-m2.metric("Total Activities Tracked", len(st.session_state.activity_log))
-
-if st.session_state.activity_log:
-    st.bar_chart(pd.DataFrame(st.session_state.activity_log)["Activity"].value_counts())
+            if label == 'Fall' and conf >= alert_threshold:
+                st.session_state.fall_events += 1
+                
+elif input_mode == "Live Camera":
+    st.info("Ensure your browser has camera permissions enabled.")
+    run = st.checkbox("Start Live Stream")
+    FRAME_WINDOW = st.image([])
+    
+    if run:
+        cap = cv2.VideoCapture(0)
+        while run:
+            ret, frame = cap.read()
+            if not ret:
+                st.error("Failed to capture video feed.")
+                break
+            
+            p_frame, label, conf = analyze_frame(frame)
+            FRAME_WINDOW.image(cv2.cvtColor(p_frame, cv2.COLOR_BGR2RGB))
+        cap.release()
