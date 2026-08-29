@@ -1,7 +1,7 @@
 streamlit
-opencv-python-headless
-numpy
+opencv-python-headless==4.10.0.84
+numpy==1.26.4
 pandas
 plotly
-tensorflow
-ultralytics
+tensorflow==2.16.1
+ultralytics==8.2.103
