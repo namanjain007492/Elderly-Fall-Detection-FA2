@@ -123,7 +123,7 @@ st.markdown(
 # CONFIGURATION
 # ============================================================
 
-YOLO_MODEL_PATH = "models/yolov8n-pose.pt"
+YOLO_MODEL_PATH = "yolov8n-pose.pt"
 CLASSIFIER_PATH = "models/fall_detection_model.h5"
 
 # IMPORTANT:
@@ -144,16 +144,13 @@ CLASS_NAMES = [
 @st.cache_resource
 def load_ai_system():
 
-    if not os.path.exists(YOLO_MODEL_PATH):
-        raise FileNotFoundError(
-            f"YOLO model not found: {YOLO_MODEL_PATH}"
-        )
-
     if not os.path.exists(CLASSIFIER_PATH):
         raise FileNotFoundError(
             f"Classifier not found: {CLASSIFIER_PATH}"
         )
 
+    # Ultralytics will auto-download this if it's not already
+    # cached locally — no need to store it in the repo.
     pose_model = YOLO(YOLO_MODEL_PATH)
 
     classifier = load_model(
