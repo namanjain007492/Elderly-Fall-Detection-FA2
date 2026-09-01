@@ -129,8 +129,8 @@ CLASSIFIER_PATH = "models/fall_detection_model.h5"
 # IMPORTANT:
 # This order MUST match the class order used while training
 CLASS_NAMES = [
-    "Not Falling",
-    "Falling"
+    "Falling",
+    "Not Falling"
 ]
 
 # ============================================================
