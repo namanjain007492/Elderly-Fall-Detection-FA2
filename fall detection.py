@@ -130,10 +130,7 @@ CLASSIFIER_PATH = "models/fall_detection_model.h5"
 # This order MUST match the class order used while training
 CLASS_NAMES = [
     "Falling",
-    "Normal Activity",
-    "Sitting",
-    "Standing",
-    "Walking"
+    "Not Falling"
 ]
 
 
