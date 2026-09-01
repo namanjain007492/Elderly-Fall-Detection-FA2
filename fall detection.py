@@ -290,18 +290,22 @@ def analyze_frame(frame, threshold):
         # NEW: BOUNDING BOX OVERRIDE FOR SITTING FALSE POSITIVES
         # --------------------------------------------------------
         # Double-check that a bounding box actually exists in this frame
-        if len(result.boxes.xyxy) > 0:
-            box = result.boxes.xyxy[0].cpu().numpy()
-            box_width = box[2] - box[0]
-            box_height = box[3] - box[1]
-
-            # If the model says "Falling" but the person is taller than they are wide
-            if label == "Falling" and (box_height > box_width):
-                label = "Not Falling"
-                confidence = 0.99  # Force a high confidence for the correction
-
-        break
-
+        i# --------------------------------------------------------
+        # NEW: SMART KEYPOINT OVERRIDE
+        # --------------------------------------------------------
+        if result.keypoints is not None and len(result.keypoints.xy) > 0:
+            kp = result.keypoints.xy[0].cpu().numpy()
+            
+            # YOLO keypoint indices: 0 is Nose, 11 is Left Hip, 12 is Right Hip
+            # Ensure the keypoints actually exist in the frame (Y > 0)
+            if len(kp) >= 13 and kp[0][1] > 0 and kp[11][1] > 0:
+                nose_y = kp[0][1]
+                avg_hip_y = (kp[11][1] + kp[12][1]) / 2.0
+                
+                # If the nose is above the hips (smaller Y value), they are upright
+                if label == "Falling" and (nose_y < avg_hip_y):
+                    label = "Not Falling"
+                    confidence = 0.99  # Force correction
 
     # --------------------------------------------------------
     # STATUS OVERLAY
