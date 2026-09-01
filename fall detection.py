@@ -272,7 +272,6 @@ def analyze_frame(frame, threshold):
         )
 
         prediction = np.asarray(prediction)
-        print("Prediction probs:", prediction)
 
         class_index = int(
             np.argmax(prediction)
@@ -284,11 +283,25 @@ def analyze_frame(frame, threshold):
 
         if class_index < len(CLASS_NAMES):
             label = CLASS_NAMES[class_index]
-
         else:
             label = "Unknown"
 
+        # --------------------------------------------------------
+        # NEW: BOUNDING BOX OVERRIDE FOR SITTING FALSE POSITIVES
+        # --------------------------------------------------------
+        # Double-check that a bounding box actually exists in this frame
+        if len(result.boxes.xyxy) > 0:
+            box = result.boxes.xyxy[0].cpu().numpy()
+            box_width = box[2] - box[0]
+            box_height = box[3] - box[1]
+
+            # If the model says "Falling" but the person is taller than they are wide
+            if label == "Falling" and (box_height > box_width):
+                label = "Not Falling"
+                confidence = 0.99  # Force a high confidence for the correction
+
         break
+
 
     # --------------------------------------------------------
     # STATUS OVERLAY
