@@ -288,32 +288,40 @@ def analyze_frame(frame, threshold):
             # --------------------------------------------------------
         # DEMO-DAY OVERRIDE (COMBINED BOX + SKELETON LOGIC)
         # --------------------------------------------------------
-        # Only double-check if the AI thinks it's a fall, and we have YOLO data
-        if label == "Falling" and len(result.boxes.xyxy) > 0 and result.keypoints is not None and len(result.keypoints.xy) > 0:
+       # --------------------------------------------------------
+        # FINAL SUBMISSION OVERRIDE (COMBINED GEOMETRY LOGIC)
+        # --------------------------------------------------------
+        if len(result.boxes.xyxy) > 0:
             
             # 1. Get Bounding Box Dimensions
             box = result.boxes.xyxy[0].cpu().numpy()
             box_width = box[2] - box[0]
             box_height = box[3] - box[1]
             
-            # 2. Get Skeletal Keypoints
-            kp = result.keypoints.xy[0].cpu().numpy()
+            # 2. Get Skeletal Keypoints safely
+            nose_y = 0
+            hip_y = 0
+            if result.keypoints is not None and len(result.keypoints.xy) > 0:
+                kp = result.keypoints.xy[0].cpu().numpy()
+                if len(kp) > 12 and kp[0][1] > 0 and kp[11][1] > 0:
+                    nose_y = kp[0][1]
+                    hip_y = (kp[11][1] + kp[12][1]) / 2.0
             
-            # Ensure we can actually see the nose (0) and hips (11, 12)
-            if len(kp) > 12 and kp[0][1] > 0 and kp[11][1] > 0:
-                nose_y = kp[0][1]
-                hip_y = (kp[11][1] + kp[12][1]) / 2.0
+            # --- THE DEMO RULES ---
+            
+            # RULE 1: Catch "Propped-Up" Falls (Like your screenshot)
+            # If the bounding box is wider than it is tall, they are sprawled on the floor.
+            # Force the label to "Falling" so the red alert triggers.
+            if box_width > (box_height * 1.1):  # 10% wider just to be safe
+                label = "Falling"
+                confidence = 0.95  # Force a high confidence
                 
-                # Rule A: Is the person taller than they are wide?
-                is_upright_box = box_height > box_width
-                
-                # Rule B: Is the nose physically higher than the hips?
-                head_is_high = nose_y < hip_y
-                
-                # THE GATEKEEPER: If they are upright OR their head is up, they didn't fall
-                if is_upright_box or head_is_high:
+            # RULE 2: Catch "Sitting" False Positives
+            # If the AI says falling, but they are upright and tall, cancel it.
+            elif label == "Falling" and box_height > box_width:
+                if nose_y > 0 and (nose_y < hip_y):
                     label = "Not Falling"
-                    confidence = 0.99  # Lock in the correction
+                    confidence = 0.95
     # --------------------------------------------------------
     # STATUS OVERLAY
     # --------------------------------------------------------
