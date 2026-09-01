@@ -211,8 +211,7 @@ def reset_session():
 # ============================================================
 # POSE FEATURE EXTRACTION
 # ============================================================
-
-def extract_pose_features(result):
+def extract_pose_features(result, frame_width, frame_height):
 
     if result.keypoints is None:
         return None
@@ -226,11 +225,13 @@ def extract_pose_features(result):
         .numpy()
     )
 
-    # Expected:
-    # 17 keypoints × 3 values
-    # x, y, confidence
-    #
-    # = 51 values
+    if keypoints.shape[0] != 17:
+        return None
+
+    # Normalize x, y to 0-1 range using frame dimensions
+    # Keep the 3rd column (confidence) unchanged
+    keypoints[:, 0] = keypoints[:, 0] / frame_width
+    keypoints[:, 1] = keypoints[:, 1] / frame_height
 
     flattened = keypoints.flatten()
 
@@ -238,7 +239,6 @@ def extract_pose_features(result):
         return None
 
     return flattened
-
 
 # ============================================================
 # FRAME ANALYSIS
@@ -258,7 +258,11 @@ def analyze_frame(frame, threshold):
 
     for result in results:
 
-        features = extract_pose_features(result)
+        features = extract_pose_features(
+            result,
+            frame.shape[1],  # width
+            frame.shape[0]   # height
+        )
 
         if features is None:
             continue
