@@ -285,29 +285,35 @@ def analyze_frame(frame, threshold):
             label = CLASS_NAMES[class_index]
         else:
             label = "Unknown"
-
+            # --------------------------------------------------------
+        # DEMO-DAY OVERRIDE (COMBINED BOX + SKELETON LOGIC)
         # --------------------------------------------------------
-        # NEW: BOUNDING BOX OVERRIDE FOR SITTING FALSE POSITIVES
-        # --------------------------------------------------------
-        # Double-check that a bounding box actually exists in this frame
-        # --------------------------------------------------------
-        # NEW: SMART KEYPOINT OVERRIDE
-        # --------------------------------------------------------
-        if result.keypoints is not None and len(result.keypoints.xy) > 0:
+        # Only double-check if the AI thinks it's a fall, and we have YOLO data
+        if label == "Falling" and len(result.boxes.xyxy) > 0 and result.keypoints is not None and len(result.keypoints.xy) > 0:
+            
+            # 1. Get Bounding Box Dimensions
+            box = result.boxes.xyxy[0].cpu().numpy()
+            box_width = box[2] - box[0]
+            box_height = box[3] - box[1]
+            
+            # 2. Get Skeletal Keypoints
             kp = result.keypoints.xy[0].cpu().numpy()
             
-            # YOLO keypoint indices: 0 is Nose, 11 is Left Hip, 12 is Right Hip
-            # Ensure the keypoints actually exist in the frame (Y > 0)
-            if len(kp) >= 13 and kp[0][1] > 0 and kp[11][1] > 0:
+            # Ensure we can actually see the nose (0) and hips (11, 12)
+            if len(kp) > 12 and kp[0][1] > 0 and kp[11][1] > 0:
                 nose_y = kp[0][1]
-                avg_hip_y = (kp[11][1] + kp[12][1]) / 2.0
+                hip_y = (kp[11][1] + kp[12][1]) / 2.0
                 
-                # If the nose is above the hips (smaller Y value), they are upright
-                if label == "Falling" and (nose_y < avg_hip_y):
+                # Rule A: Is the person taller than they are wide?
+                is_upright_box = box_height > box_width
+                
+                # Rule B: Is the nose physically higher than the hips?
+                head_is_high = nose_y < hip_y
+                
+                # THE GATEKEEPER: If they are upright OR their head is up, they didn't fall
+                if is_upright_box or head_is_high:
                     label = "Not Falling"
-                    confidence = 0.99  # Force correction
-
-
+                    confidence = 0.99  # Lock in the correction
     # --------------------------------------------------------
     # STATUS OVERLAY
     # --------------------------------------------------------
