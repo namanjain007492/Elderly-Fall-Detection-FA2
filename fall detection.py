@@ -307,6 +307,8 @@ def analyze_frame(frame, threshold):
                     label = "Not Falling"
                     confidence = 0.99  # Force correction
 
+    break
+
     # --------------------------------------------------------
     # STATUS OVERLAY
     # --------------------------------------------------------
