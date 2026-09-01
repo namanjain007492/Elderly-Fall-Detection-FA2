@@ -276,6 +276,7 @@ def analyze_frame(frame, threshold):
         )
 
         prediction = np.asarray(prediction)
+        print("Prediction probs:", prediction)
 
         class_index = int(
             np.argmax(prediction)
