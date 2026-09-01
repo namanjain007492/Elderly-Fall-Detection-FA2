@@ -290,7 +290,7 @@ def analyze_frame(frame, threshold):
         # NEW: BOUNDING BOX OVERRIDE FOR SITTING FALSE POSITIVES
         # --------------------------------------------------------
         # Double-check that a bounding box actually exists in this frame
-        i# --------------------------------------------------------
+        # --------------------------------------------------------
         # NEW: SMART KEYPOINT OVERRIDE
         # --------------------------------------------------------
         if result.keypoints is not None and len(result.keypoints.xy) > 0:
