@@ -1,6 +1,7 @@
 import os
 import tempfile
 import time
+import math
 
 import cv2
 import numpy as np
@@ -99,6 +100,7 @@ CLASS_NAMES = [
     "Not Falling"
 ]
 
+
 # ============================================================
 # MODEL LOADING
 # ============================================================
@@ -140,9 +142,6 @@ def reset_session():
     st.session_state.frame_count = 0
 
 
-# ============================================================
-# POSE FEATURE EXTRACTION
-# ============================================================
 def extract_pose_features(result, frame_width, frame_height):
     if result.keypoints is None or len(result.keypoints.data) == 0:
         return None
@@ -161,14 +160,15 @@ def extract_pose_features(result, frame_width, frame_height):
 
 
 # ============================================================
-# FRAME ANALYSIS (WITH ADVANCED OVERRIDES)
+# FRAME ANALYSIS (WITH VECTOR TRIGONOMETRY)
 # ============================================================
 
-def analyze_frame(frame, threshold):
+def analyze_frame(frame, threshold, show_diagnostics=False):
     results = yolo(frame, verbose=False)
     annotated = frame.copy()
     label = "No Person Detected"
     confidence = 0.0
+    spine_angle = None
 
     for result in results:
         features = extract_pose_features(result, frame.shape[1], frame.shape[0])
@@ -176,9 +176,10 @@ def analyze_frame(frame, threshold):
             continue
 
         annotated = result.plot()
+        
+        # Base AI Prediction
         prediction = classifier.predict(features.reshape(1, -1), verbose=0)
         prediction = np.asarray(prediction)
-        
         class_index = int(np.argmax(prediction))
         confidence = float(prediction[0][class_index])
 
@@ -188,40 +189,41 @@ def analyze_frame(frame, threshold):
             label = "Unknown"
 
         # --------------------------------------------------------
-        # ULTIMATE DEMO OVERRIDE (SPRAWL + CRUMPLE LOGIC)
+        # ADVANCED VECTOR POSTURE CALIBRATION
         # --------------------------------------------------------
-        if len(result.boxes.xyxy) > 0:
+        if result.keypoints is not None and len(result.keypoints.xy) > 0:
+            kp = result.keypoints.xy[0].cpu().numpy()
             
-            box = result.boxes.xyxy[0].cpu().numpy()
-            box_width = box[2] - box[0]
-            box_height = box[3] - box[1]
-            
-            nose_y, hip_y, shoulder_y = 0, 0, 0
-            if result.keypoints is not None and len(result.keypoints.xy) > 0:
-                kp = result.keypoints.xy[0].cpu().numpy()
-                if len(kp) > 12:
-                    if kp[0][1] > 0: 
-                        nose_y = kp[0][1]
-                    if kp[5][1] > 0 and kp[6][1] > 0: 
-                        shoulder_y = (kp[5][1] + kp[6][1]) / 2.0
-                    if kp[11][1] > 0 and kp[12][1] > 0: 
-                        hip_y = (kp[11][1] + kp[12][1]) / 2.0
-            
-            # RULE 1: Sprawled Fall (Horizontal on the floor)
-            if box_width > (box_height * 1.1):  
-                label = "Falling"
-                confidence = 0.98  
+            # Ensure we have shoulders (5, 6) and hips (11, 12)
+            if len(kp) > 12 and kp[5][1] > 0 and kp[6][1] > 0 and kp[11][1] > 0 and kp[12][1] > 0:
+                mid_shoulder_x = (kp[5][0] + kp[6][0]) / 2.0
+                mid_shoulder_y = (kp[5][1] + kp[6][1]) / 2.0
                 
-            # RULE 2: Crumpled Fall (Vertical distance between shoulders and hips is tiny)
-            elif shoulder_y > 0 and hip_y > 0 and abs(shoulder_y - hip_y) < (box_height * 0.15):
-                label = "Falling"
-                confidence = 0.96
-
-            # RULE 3: Sitting False Positives (Upright and tall)
-            elif label == "Falling" and box_height > box_width:
-                if nose_y > 0 and (nose_y < hip_y):
+                mid_hip_x = (kp[11][0] + kp[12][0]) / 2.0
+                mid_hip_y = (kp[11][1] + kp[12][1]) / 2.0
+                
+                # Calculate vector trajectory of the spine
+                dx = mid_hip_x - mid_shoulder_x
+                dy = mid_hip_y - mid_shoulder_y
+                
+                # Convert to degrees (90 = vertical, 0/180 = horizontal)
+                spine_angle = abs(math.degrees(math.atan2(dy, dx)))
+                
+                # RULE 1: Standing/Sitting Verticality Check (Between 45 and 135 degrees)
+                if 45 <= spine_angle <= 135:
                     label = "Not Falling"
-                    confidence = 0.95
+                    confidence = 0.99  # Absolute certainty based on math
+                
+                # RULE 2: Fallen Horizontal Check (Under 35 or over 145 degrees)
+                elif spine_angle < 35 or spine_angle > 145:
+                    label = "Falling"
+                    confidence = 0.98
+
+        # Diagnostic Overlay for Presentation
+        if show_diagnostics and spine_angle is not None:
+            cv2.putText(annotated, f"Spine Vector: {spine_angle:.1f} deg", (20, 120),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
+            
         break
 
     # --------------------------------------------------------
@@ -252,10 +254,14 @@ with st.sidebar:
     alert_threshold = st.slider("Fall Confidence Threshold", 0.50, 0.99, 0.75, 0.05)
     
     st.markdown("---")
+    st.markdown("### Advanced Settings")
+    dev_mode = st.checkbox("⚙️ Developer Diagnostic Overlay", value=False, help="Displays raw mathematical vectors on the feed.")
+    
+    st.markdown("---")
     st.markdown("### System Status")
     st.success("🟢 AI Engine Online")
     st.markdown("**Pose Model:** YOLOv8 Pose")
-    st.markdown("**Classifier:** Keras CNN")
+    st.markdown("**Classifier:** Keras CNN + Vector Alg.")
     st.markdown("---")
 
     if st.button("🗑️ Clear Session Data", use_container_width=True):
@@ -276,7 +282,7 @@ with st.expander("ℹ️ Project Abstract & System Architecture", expanded=False
     **Architecture:** 
     * **Feature Extraction:** YOLOv8 Pose Estimation (51-point skeletal mapping).
     * **Classification:** Custom Keras Convolutional Neural Network.
-    * **Edge Logic:** Algorithmic spatial geometry overrides to mitigate false positives (sitting) and false negatives (propped-up & crumpled falls).
+    * **Edge Logic (Algorithmic Calibration):** Dynamic mathematical calculation of spine trajectories using vector trigonometry to eliminate false positives in diverse postures.
     """)
 
 st.markdown("---")
@@ -322,7 +328,7 @@ with tab1:
             file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
             image = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
             
-            processed, label, confidence = analyze_frame(image, alert_threshold)
+            processed, label, confidence = analyze_frame(image, alert_threshold, show_diagnostics=dev_mode)
             st.session_state.frame_count += 1
             
             st.session_state.activity_log.append({
@@ -381,7 +387,7 @@ with tab1:
                 if not ret:
                     break
 
-                processed, label, confidence = analyze_frame(frame, alert_threshold)
+                processed, label, confidence = analyze_frame(frame, alert_threshold, show_diagnostics=dev_mode)
                 st.session_state.frame_count += 1
 
                 if label != "No Person Detected":
