@@ -86,3 +86,242 @@ Camera / Image / Video
  Fall Detection Decision
           ↓
  Monitoring Dashboard
+
+🧠 Artificial Intelligence Pipeline
+
+Sentinel AI follows a multi-stage computer-vision pipeline.
+
+Stage 1 — Visual Input
+
+The system accepts visual information through:
+
+Static images
+Uploaded videos
+Future live-camera integration
+Stage 2 — Human Pose Estimation
+
+The system uses YOLOv8 Pose to identify human body keypoints.
+
+The pose model provides information about body landmarks such as:
+
+Nose
+Shoulders
+Elbows
+Wrists
+Hips
+Knees
+Ankles
+
+The standard human pose representation contains:
+
+17 keypoints
+×
+3 values per keypoint
+
+= 51 numerical features
+
+The three values represent:
+
+X coordinate
+Y coordinate
+Confidence
+
+Stage 3 — Feature Extraction
+
+The detected pose landmarks are converted into a numerical feature vector.
+
+Example:
+
+[x1, y1, c1,
+ x2, y2, c2,
+ x3, y3, c3,
+ ...
+ x17, y17, c17]
+
+This produces a 51-dimensional representation of the detected person's pose.
+
+Stage 4 — Activity Classification
+
+The extracted pose representation is passed to the trained Keras/TensorFlow classifier.
+
+The classifier produces probabilities for each activity class.
+
+Example:
+
+Falling          0.82
+Normal Activity  0.04-0.05
+
+The class with the highest probability becomes the predicted activity.
+
+Stage 5 — Fall Decision
+
+The application applies a configurable confidence threshold.
+
+For example:
+
+Fall confidence ≥ threshold
+             ↓
+      Potential fall
+             ↓
+      Alert displayed
+
+The threshold can be adjusted through the Streamlit interface.
+
+🏷️ Activity Classes
+
+The FA-2 system is designed around two activity categories.
+
+| Class              | Description                           |
+| ------------------ | ------------------------------------- |
+| 🚨 Falling         | Person is detected in a falling state |
+| 🏠 Normal Activity | General non-specific daily activity   |
+
+
+The exact class ordering used by the trained model must match the classifier configuration in the application.
+
+🏗️ System Architecture
+
+                    ┌──────────────────────┐
+                    │    Visual Input      │
+                    │ Image / Video / Cam  │
+                    └──────────┬───────────┘
+                               │
+                               ▼
+                    ┌──────────────────────┐
+                    │    YOLOv8 Pose       │
+                    │  Pose Estimation     │
+                    └──────────┬───────────┘
+                               │
+                               ▼
+                    ┌──────────────────────┐
+                    │ 17 Body Keypoints    │
+                    │ X / Y / Confidence   │
+                    └──────────┬───────────┘
+                               │
+                               ▼
+                    ┌──────────────────────┐
+                    │ Feature Vector       │
+                    │ 51 Numerical Values  │
+                    └──────────┬───────────┘
+                               │
+                               ▼
+                    ┌──────────────────────┐
+                    │ TensorFlow / Keras   │
+                    │ Activity Classifier  │
+                    └──────────┬───────────┘
+                               │
+                               ▼
+              ┌────────────────────────────────┐
+              │       Activity Prediction      │
+              └───────────────┬────────────────┘
+                              │
+                 ┌────────────┴────────────┐
+                 ▼                         ▼
+          Normal Activity            Falling
+                 │                         │
+                 ▼                         ▼
+          Status Display             Alert System
+                                           │
+                                           ▼
+                                  Incident Logging
+                                           │
+                                           ▼
+                                  Analytics Dashboard
+
+🔬 FA-2 Development Workflow
+
+The FA-2 development process is organized into several stages.
+
+Phase 1 — Environment Setup
+Google Colab environment
+Python
+TensorFlow
+OpenCV
+MediaPipe / pose-processing tools where applicable
+Ultralytics
+Scikit-learn
+Phase 2 — Dataset Preparation
+Dataset acquisition
+Activity verification
+Label verification
+Frame extraction
+Dataset organization
+Phase 3 — Pose Processing
+Human detection
+Keypoint extraction
+Feature preparation
+Pose-data validation
+Phase 4 — Model Development
+Training dataset preparation
+Validation dataset preparation
+Classifier development
+Model training
+Hyperparameter experimentation
+Phase 5 — Model Evaluation
+
+The model is evaluated using:
+
+Accuracy
+Precision
+Recall
+F1-score
+Confusion matrix
+Classification report
+Phase 6 — Application Development
+
+The trained model is integrated into a Streamlit dashboard.
+
+Phase 7 — Testing
+
+The system is tested using:
+
+Individual images
+Previously unseen videos
+Different activity classes
+Confidence thresholds
+Phase 8 — Deployment
+
+The final application can be deployed using Streamlit-compatible hosting.
+
+📥 Data Export
+
+The activity log can be exported as a CSV file.
+
+Example:
+
+sentinel_activity_log.csv
+
+This allows further analysis using:
+
+Microsoft Excel
+Google Sheets
+Python
+Pandas
+Statistical software
+
+👨‍💻 Project Information
+
+Project: Sentinel AI — Elderly Activity & Fall Detection
+
+Assessment: FA-2
+
+Program: IBCP — Artificial Intelligence
+
+Academic Year: 2026–2027
+
+Student: Naman Jain
+
+School: Jain Vidyalaya IB World School, Madurai
+
+⚖️ Educational Disclaimer
+
+Sentinel AI is an educational Artificial Intelligence project developed for learning and experimentation in computer vision and machine learning.
+
+The system should not be used as a substitute for:
+
+Medical professionals
+Emergency services
+Certified fall-detection systems
+Professional healthcare monitoring
+
+Predictions generated by the model should be considered experimental outputs.
