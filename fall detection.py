@@ -161,7 +161,7 @@ def extract_pose_features(result, frame_width, frame_height):
 
 
 # ============================================================
-# FRAME ANALYSIS (WITH OVERRIDES)
+# FRAME ANALYSIS (WITH ADVANCED OVERRIDES)
 # ============================================================
 
 def analyze_frame(frame, threshold):
@@ -188,7 +188,7 @@ def analyze_frame(frame, threshold):
             label = "Unknown"
 
         # --------------------------------------------------------
-        # FINAL SUBMISSION OVERRIDE (COMBINED GEOMETRY LOGIC)
+        # ULTIMATE DEMO OVERRIDE (SPRAWL + CRUMPLE LOGIC)
         # --------------------------------------------------------
         if len(result.boxes.xyxy) > 0:
             
@@ -196,20 +196,28 @@ def analyze_frame(frame, threshold):
             box_width = box[2] - box[0]
             box_height = box[3] - box[1]
             
-            nose_y = 0
-            hip_y = 0
+            nose_y, hip_y, shoulder_y = 0, 0, 0
             if result.keypoints is not None and len(result.keypoints.xy) > 0:
                 kp = result.keypoints.xy[0].cpu().numpy()
-                if len(kp) > 12 and kp[0][1] > 0 and kp[11][1] > 0:
-                    nose_y = kp[0][1]
-                    hip_y = (kp[11][1] + kp[12][1]) / 2.0
+                if len(kp) > 12:
+                    if kp[0][1] > 0: 
+                        nose_y = kp[0][1]
+                    if kp[5][1] > 0 and kp[6][1] > 0: 
+                        shoulder_y = (kp[5][1] + kp[6][1]) / 2.0
+                    if kp[11][1] > 0 and kp[12][1] > 0: 
+                        hip_y = (kp[11][1] + kp[12][1]) / 2.0
             
-            # RULE 1: Catch "Propped-Up" Falls 
+            # RULE 1: Sprawled Fall (Horizontal on the floor)
             if box_width > (box_height * 1.1):  
                 label = "Falling"
-                confidence = 0.95  
+                confidence = 0.98  
                 
-            # RULE 2: Catch "Sitting" False Positives
+            # RULE 2: Crumpled Fall (Vertical distance between shoulders and hips is tiny)
+            elif shoulder_y > 0 and hip_y > 0 and abs(shoulder_y - hip_y) < (box_height * 0.15):
+                label = "Falling"
+                confidence = 0.96
+
+            # RULE 3: Sitting False Positives (Upright and tall)
             elif label == "Falling" and box_height > box_width:
                 if nose_y > 0 and (nose_y < hip_y):
                     label = "Not Falling"
@@ -261,7 +269,6 @@ with st.sidebar:
 
 st.markdown('<p class="main-title">🛡️ Sentinel AI</p>', unsafe_allow_html=True)
 
-# --- NEW EXECUTIVE SUMMARY ---
 with st.expander("ℹ️ Project Abstract & System Architecture", expanded=False):
     st.markdown("""
     **Objective:** A real-time, non-intrusive monitoring system designed to detect fall events in elderly care environments using computer vision.
@@ -269,7 +276,7 @@ with st.expander("ℹ️ Project Abstract & System Architecture", expanded=False
     **Architecture:** 
     * **Feature Extraction:** YOLOv8 Pose Estimation (51-point skeletal mapping).
     * **Classification:** Custom Keras Convolutional Neural Network.
-    * **Edge Logic:** Algorithmic spatial geometry overrides to mitigate false positives (sitting) and false negatives (propped-up falls).
+    * **Edge Logic:** Algorithmic spatial geometry overrides to mitigate false positives (sitting) and false negatives (propped-up & crumpled falls).
     """)
 
 st.markdown("---")
@@ -306,14 +313,11 @@ tab1, tab2, tab3 = st.tabs(["📷 Monitoring", "📈 Analytics", "📋 Logs & Ex
 with tab1:
     st.subheader(f"Current Feed: {input_mode}")
 
-    # --------------------------------------------------------
-    # STATIC IMAGE
-    # --------------------------------------------------------
     if input_mode == "Static Image":
         uploaded_file = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png"])
 
         if uploaded_file:
-            st.toast("Image loaded. Initializing neural network...", icon="🧠") # New feature!
+            st.toast("Image loaded. Initializing neural network...", icon="🧠") 
             
             file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
             image = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
@@ -330,7 +334,6 @@ with tab1:
             if label == "Falling" and confidence >= alert_threshold:
                 st.session_state.fall_events += 1
                 
-                # --- NEW AUDIO ALARM ---
                 st.markdown("""
                     <audio autoplay>
                         <source src="https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3" type="audio/mpeg">
@@ -357,14 +360,11 @@ with tab1:
             with c2:
                 st.image(cv2.cvtColor(processed, cv2.COLOR_BGR2RGB), caption="AI Pose Analysis", use_container_width=True)
 
-    # --------------------------------------------------------
-    # VIDEO
-    # --------------------------------------------------------
     elif input_mode == "Video Stream":
         uploaded_video = st.file_uploader("Upload a surveillance video", type=["mp4", "avi", "mov"])
 
         if uploaded_video:
-            st.toast("Video stream loaded. Analyzing frames...", icon="🧠") # New feature!
+            st.toast("Video stream loaded. Analyzing frames...", icon="🧠") 
             
             temporary_file = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
             temporary_file.write(uploaded_video.read())
@@ -406,7 +406,6 @@ with tab1:
             if video_fall_detected:
                 st.session_state.fall_events += 1
                 
-                # --- NEW AUDIO ALARM ---
                 st.markdown("""
                     <audio autoplay>
                         <source src="https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3" type="audio/mpeg">
@@ -448,7 +447,6 @@ with tab2:
             fig_bar.update_traces(textposition="outside")
             st.plotly_chart(fig_bar, use_container_width=True)
             
-        # --- NEW TIME-SERIES ANALYTICS ---
         st.markdown("### Confidence Timeline (Live Session)")
         fig_line = px.line(df, y="Confidence", x=df.index, title="Detection Confidence Over Time", markers=True)
         fig_line.add_hline(y=alert_threshold, line_dash="dash", line_color="red", annotation_text="Alert Threshold")
