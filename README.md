@@ -19,7 +19,6 @@
 
 <p align="center">
 
-<img src="https://img.shields.io/badge/Status-In%20Development-orange?style=flat-square">
 
 <img src="https://img.shields.io/badge/Project-FA--2-blue?style=flat-square">
 
