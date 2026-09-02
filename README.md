@@ -1,4 +1,4 @@
-#🛡️ Sentinel AI
+🛡️ Sentinel AI
 ## Intelligent Elderly Activity & Fall Detection System
 
 <p align="center">
