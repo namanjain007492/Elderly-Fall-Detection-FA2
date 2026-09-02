@@ -24,7 +24,7 @@
 
 <img src="https://img.shields.io/badge/Domain-Artificial%20Intelligence-purple?style=flat-square">
 
-<img src="https://img.shields.io/badge/Application-Healthcare%20Monitoring-green?style=flat-square">
+<img src="https://img.shields.io/badge/Sentinel-AI%20Monitoring-green?style=flat-square">
 
 </p>
 
